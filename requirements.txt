@@ -1,8 +1,9 @@
-streamlit
-langchain
-langchain-chroma
-langchain-huggingface
-chromadb
-transformers
-sentence-transformers
-torch
+# Compatibility bounds for the Streamlit application; this is not a lockfile.
+streamlit>=1.41,<2
+langchain-chroma>=0.2,<0.3
+langchain-huggingface>=0.1.2,<0.2
+chromadb>=0.6,<1
+transformers>=4.48,<5
+sentence-transformers>=3.4,<4
+torch>=2.5,<3
+accelerate>=1.3,<2

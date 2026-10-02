@@ -1,56 +1,59 @@
-# 🏢 CorporateMind AI: Multi-Agent Enterprise Assistant
-An advanced Multi-Agent system designed for corporate environments, capable of intelligently routing and resolving employee queries across HR and IT domains using **LangGraph** and **Llama-3**.
+# HR Policy Question Answering System (RAG)
 
----
+A small Streamlit application that retrieves passages from a persisted Chroma database and asks a local Hugging Face causal language model to answer an HR-policy question. The repository also contains a Kaggle-oriented notebook for rebuilding a vector store from policy PDFs.
 
-## 🚀 Project Overview
-This project moves beyond simple RAG chatbots to a **Multi-Agent Architecture**. It simulates a professional workplace environment where a **Supervisor Agent** analyzes user intent and routes the query to the correct specialized department (HR Specialist or IT Support).
+## What is included
 
-### Key Features:
-- **Multi-Agent Orchestration:** Powered by `LangGraph` for stateful, multi-turn conversations.
-- **Intelligent Routing:** A Supervisor Agent acting as a router to prevent prompt injection and ensure high accuracy.
-- **Optimized LLM:** Built on **Llama-3-8B-Instruct** using **4-bit Quantization (bitsandbytes)** for efficient GPU performance.
-- **Production-Ready State Management:** Uses a unified `AgentState` to track messages and routing decisions across the graph.
+- `app.py` — Streamlit UI, retrieval, and answer generation.
+- `chroma_hr_db/` — persisted Chroma database loaded by the app.
+- `hr-policy-question-answering-system-rag.ipynb` — PDF ingestion, chunking, embedding, vector-store creation, and example queries.
+- `requirements.txt` — bounded dependencies for the Streamlit app. It is not a complete lockfile; PyTorch installation varies by platform and accelerator.
 
----
+The app uses `sentence-transformers/all-MiniLM-L6-v2` for query embeddings and `microsoft/Phi-3-mini-4k-instruct` for generation. The notebook instead uses a Llama 3 8B quantized model. These are two separate paths, not a multi-agent system.
 
-## 🏗️ System Architecture
-The system follows a **Graph-based workflow**:
-1. **START**: User inputs a query.
-2. **Supervisor (The Router)**: Classifies intent (HR, IT, or General).
-3. **Condition Edges**: 
-   - If **HR**: Routes to `HR_Specialist_Node`.
-   - If **IT**: Routes to `IT_Specialist_Node`.
-4. **END**: Final response is cleaned and delivered.
+## Run the app
 
----
+Use Python 3.10 or newer. Install a PyTorch build appropriate for your operating system and accelerator (see the [official PyTorch install selector](https://pytorch.org/get-started/locally/)); then install the remaining requirements and launch Streamlit:
 
-## 🧠 Core Logic & Routing Mechanism
-This system operates on a **Stateful Graph Architecture**, ensuring high-precision routing:
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+streamlit run app.py
+```
 
-*   **Intent Classification:** Uses **Llama-3** as a reasoning engine to classify queries into specific routing tokens (`TO_HR`, `TO_IT`).
-*   **Stateful Communication:** Uses `AgentState` to maintain conversation memory across different specialized agents.
-*   **Specialized Nodes:** Dedicated environments for HR policies and IT troubleshooting, ensuring domain-specific accuracy.
-*   **Output Refinement:** A custom parsing layer removes technical tokens, delivering a polished, enterprise-ready response.
+The first question may download the embedding and generation models from Hugging Face and requires network access. The generation model is several billion parameters; a compatible GPU is recommended, and CPU execution may require substantial memory and be slow. `device_map="auto"` lets Transformers use available hardware, but does not guarantee the model will fit on a given machine.
 
----
+The app expects the checked-in `chroma_hr_db/` directory next to `app.py`. It displays the source filename and page metadata available from retrieved records; the source is reduced to a filename rather than displaying an absolute path.
 
-## 🛠️ Tech Stack
-- **Frameworks:** LangChain, LangGraph.
-- **LLM:** Llama-3-8B-Instruct (4-bit Quantized).
-- **Optimization:** BitsAndBytes, Accelerate.
-- **Environment:** Kaggle/Colab (GPU T4).
+## Rebuild the vector store from PDFs
 
----
+The notebook expects policy PDFs in a directory. The PDFs are not included in this repository, and the original Kaggle input path is not available on other machines. Set `HR_POLICY_PDF_DIR` to a directory containing the authorized PDF files before running the data-loading cell, for example:
 
-## 💻 Sample Output
-> **User:** "My laptop screen is flickering, what should I do?"  
-> **Process:** `Supervisor` -> `IT_Specialist`  
-> **AI:** "IT Specialist: Please visit the IT portal to open a hardware ticket or visit the IT desk on Floor 2."
+```bash
+export HR_POLICY_PDF_DIR="$PWD/policy-pdfs"
+```
 
----
+On Kaggle, the default remains `/kaggle/input/hr-policy-docs-pdf`. The notebook reports a clear error if the selected directory is missing or contains no PDFs. Do not commit confidential or personally identifiable policy documents without authorization. Rebuilding requires access to the source PDFs and the notebook's separate model/dependency setup.
 
-## 👨‍💻 Author
-**Abdul Rahman Ahmed**
+## Limitations and responsible use
 
-*Junior Data Scientist & AI Engineer*
+- This is a basic retrieval-augmented question-answering demo, not a LangGraph workflow, multi-agent router, or IT assistant.
+- A prompt asking the model to use retrieved context is not a security boundary and does not guarantee factuality or prevent prompt injection. Verify important answers against the source policy.
+- The app has not been benchmarked for answer quality, retrieval accuracy, latency, or production readiness. The notebook's example queries are demonstrations, not automated performance tests.
+- The app and notebook use different generation models and may produce different results. No model-performance claim is made here.
+- HR policies may contain sensitive information. Run only with documents and environments approved by your organization; avoid sharing questions, outputs, or policy text with unauthorized parties.
+
+## Local checks
+
+The repository includes lightweight unit tests for answer formatting and source-label privacy that do not load models or require the large ML dependencies:
+
+```bash
+python -m unittest discover -s tests
+python -m py_compile app.py rag_utils.py
+```
+
+## Author
+
+Abdul Rahman Ahmed
