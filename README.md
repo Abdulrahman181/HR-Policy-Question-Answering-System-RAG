@@ -5,6 +5,7 @@ This repository contains a **single-domain Retrieval-Augmented Generation (RAG)*
 ## What is included
 
 - `app.py`: Streamlit UI that retrieves the top three Chroma documents and asks a local Hugging Face text-generation model to answer only from that context.
+- `rag_utils.py`: dependency-free answer normalization, source-label sanitization, and prompt-boundary helpers used by the app and tests.
 - `hr-policy-question-answering-system-rag.ipynb`: PDF ingestion, cleaning, chunking, embedding, Chroma persistence, and optional LLM demonstration.
 - `chroma_hr_db/`: a checked-in pre-built Chroma artifact. Its metadata reports 97 stored chunks and sources such as `officetime.pdf`.
 - `tests/test_static_validation.py`: dependency-free static checks for Python and notebook structure.
@@ -23,7 +24,7 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-The embedding model and the configured language model are downloaded by Hugging Face on first use. GPU inference is recommended for the default Phi-3 model; CPU execution is supported by the code for functional checks but may be impractical for a multi-billion-parameter model. The notebook's optional 4-bit path additionally uses `bitsandbytes` and `accelerate`.
+The embedding model and the configured language model are downloaded by Hugging Face on first use. GPU inference is recommended for the default Phi-3 model; CPU execution is supported by the app but may be impractical for a multi-billion-parameter model. The notebook's optional 4-bit path additionally uses `bitsandbytes` and `accelerate` and is disabled unless `HR_POLICY_ENABLE_LLM=1` is set.
 
 ## Run the application
 
@@ -42,7 +43,7 @@ Optional model overrides are `HR_POLICY_EMBEDDING_MODEL` and `HR_POLICY_LLM_MODE
 ## Rebuild the index
 
 1. Add the source PDFs under `data/hr-policy-docs-pdf/` (or configure `HR_POLICY_DATA_PATH`).
-2. Run the notebook through the embedding/vector-store cells.
+2. Run the notebook from the repository root through the embedding/vector-store cells. The LLM and smoke-test cells are optional; set `HR_POLICY_ENABLE_LLM=1` only when a suitable CUDA environment and model downloads are available.
 3. Set `HR_POLICY_VECTOR_DB` to the newly generated index when launching the app.
 
 The notebook stores relative/portable paths, normalizes PDF metadata, and preserves source/page metadata. It does not implement a supervised train/test split: this is a retrieval index, not a trained predictive model. The included stress prompts are smoke checks only; no accuracy, recall, groundedness, or latency metrics are claimed.
@@ -57,7 +58,7 @@ ruff check app.py tests
 python -m compileall -q app.py tests
 ```
 
-A full end-to-end run requires the dependencies, Hugging Face model downloads, and the source/index artifacts. Those conditions are intentionally not claimed by static validation alone.
+A full end-to-end run requires the dependencies, Hugging Face model downloads, and the source/index artifacts. Those conditions are intentionally not claimed by static validation alone. The checks validate the persisted Chroma SQLite schema/count at a basic integrity level; they do not prove that the missing source PDFs match the checked-in index.
 
 ## Security and reproducibility notes
 

@@ -8,19 +8,17 @@ when the source documents are available.
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
+from rag_utils import FALLBACK_ANSWER, build_prompt, extract_answer, format_source_label
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CHROMA_PATH = BASE_DIR / "chroma_hr_db"
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_LLM_MODEL = "microsoft/Phi-3-mini-4k-instruct"
-FALLBACK_ANSWER = (
-    "I am sorry, but this information is not available in the HR policies."
-)
+MAX_QUESTION_CHARS = 1_000
 
 
 def configured_path(env_name: str, default: Path) -> Path:
@@ -83,7 +81,10 @@ def load_llm(model_id: str):
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model_kwargs: dict[str, Any] = {"device_map": "auto"}
     if torch.cuda.is_available():
-        model_kwargs["torch_dtype"] = torch.bfloat16
+        supports_bfloat16 = getattr(torch.cuda, "is_bf16_supported", lambda: False)()
+        model_kwargs["torch_dtype"] = (
+            torch.bfloat16 if supports_bfloat16 else torch.float16
+        )
     else:
         # CPU inference is supported for functional checks, but large models can
         # be impractical. The message is kept in the UI rather than guessing.
@@ -96,45 +97,29 @@ def load_llm(model_id: str):
         tokenizer=tokenizer,
         max_new_tokens=512,
         do_sample=False,
-        return_full_text=True,
+        return_full_text=False,
     )
     return HuggingFacePipeline(pipeline=generation_pipeline)
-
-
-def clean_generation(response: Any, prompt: str) -> str:
-    """Normalize common LangChain/Transformers response shapes and prompt echo."""
-
-    if isinstance(response, list) and response:
-        response = response[0]
-    if isinstance(response, dict):
-        response = response.get("generated_text", response.get("text", ""))
-    text = str(response).strip()
-    if prompt in text:
-        text = text.split(prompt, 1)[-1].strip()
-    for marker in ("<|start_header_id|>assistant<|end_header_id|>", "Answer:"):
-        if marker in text:
-            text = text.rsplit(marker, 1)[-1].strip()
-    text = re.split(r"<\|eot_id\|>|<\|end_of_text\|>", text, maxsplit=1)[0]
-    return text.strip() or FALLBACK_ANSWER
 
 
 st.set_page_config(page_title="HR Policy Question Answering System", layout="wide")
 st.title("HR Policy Assistant")
 st.caption("Answers are grounded in the persisted HR policy vector index.")
 
-question = st.text_input("Enter your HR policy question")
+question = st.text_input("Enter your HR policy question", max_chars=MAX_QUESTION_CHARS)
 chroma_path = configured_path("HR_POLICY_VECTOR_DB", DEFAULT_CHROMA_PATH)
 embedding_model = os.getenv("HR_POLICY_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
 llm_model = os.getenv("HR_POLICY_LLM_MODEL", DEFAULT_LLM_MODEL)
 
 try:
     retriever = load_retriever(str(chroma_path), embedding_model)
-except (FileNotFoundError, RuntimeError, OSError) as exc:
+except (FileNotFoundError, RuntimeError, OSError, ValueError) as exc:
     st.error(str(exc))
     st.stop()
 
 if st.button("Ask"):
-    if not question.strip():
+    question = question.strip()
+    if not question:
         st.warning("Please enter a question.")
     else:
         with st.spinner("Searching the HR policies..."):
@@ -143,34 +128,20 @@ if st.button("Ask"):
             st.info(FALLBACK_ANSWER)
         else:
             context = "\n\n".join(doc.page_content for doc in documents)
-            prompt = f"""You are a professional HR assistant.
-Answer the question using ONLY the information provided in the context below.
-If the answer does not exist in the context, respond exactly with:
-{FALLBACK_ANSWER}
-
-Context:
-{context}
-
-Question:
-{question}
-
-Answer:
-"""
+            prompt = build_prompt(context, question)
             try:
                 with st.spinner("Generating answer..."):
                     llm = load_llm(llm_model)
                     response = llm.invoke(prompt)
-            except (RuntimeError, OSError, ValueError) as exc:
+            except (RuntimeError, OSError, ValueError, TypeError) as exc:
                 st.error(f"Unable to load or run the language model: {exc}")
             else:
                 st.subheader("Answer")
-                st.write(clean_generation(response, prompt))
+                st.write(extract_answer(response, prompt))
                 st.subheader("Sources")
                 seen_sources: set[str] = set()
                 for doc in documents:
-                    source = str(doc.metadata.get("source", "Unknown source"))
-                    page = doc.metadata.get("page", doc.metadata.get("page_label", "N/A"))
-                    label = f"{source} (Page: {page})"
+                    label = format_source_label(doc.metadata)
                     if label not in seen_sources:
                         st.write(label)
                         seen_sources.add(label)
